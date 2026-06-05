@@ -20,13 +20,12 @@ ParFlow-CONCN-Share-Platform/
 
 ```
 git clone https://github.com/ParFlowCommunity/ParFlow-CONCN-Share-Platform
-cd ParFlow-CONCN-Share-Platform
 ```
 
 ### 2. 进入代码目录
 
 ```bash
-cd concnshare
+cd ParFlow-CONCN-Share-Platform
 ```
 
 ### 3. 创建 Conda 环境
