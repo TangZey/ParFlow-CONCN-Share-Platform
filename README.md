@@ -1,4 +1,4 @@
-# myparflowtools-流域裁剪与 PFSOL 生成工具集
+# parflowtools-流域裁剪与 PFSOL 生成工具集
 
 ## 功能
 
@@ -22,11 +22,11 @@
 
 将项目目录放置于服务器，结构如下：
 
-myparflowtools/
+parflowtools/
 ├── setup.py
 ├── environment.yaml
 ├── README.md
-└── myparflowtools/
+└── parflowtools/
     ├── __init__.py
     ├── run_two.py
     ├── generate_mask.py
@@ -36,7 +36,7 @@ myparflowtools/
 
 ```
 conda env create -f environment.yaml
-conda activate myparflowenv
+conda activate parflowenv
 ```
 
 
@@ -64,7 +64,7 @@ pip install -e .
 
 ## 配置
 
-运行前请修改 `myparflowtools/run_two.py` 中的路径变量：
+运行前请修改 `parflowtools/run_two.py` 中的路径变量：
 
 ```python
 SHP_DIR = "/data/share/parflow-group/CONCN_Subbasins_Map/PFBAS/shp"
