@@ -9,22 +9,16 @@
 - 同时裁剪多个 PFB 文件（slopex, slopey, Shangguan, CONCN_manning, GLHYMPS）。
 
 - 将掩膜转换为 PFB 格式，并调用 `pfmask-to-pfsol` 生成 VTK 和 PFSOL 域文件。
-  
-  
 
 ## 安装
 
-
-
-
 ### 1. 克隆或上传代码
-
 
 将项目目录放置于服务器，结构如下：
 
 parflowtools/
 ├── setup.py
-├── environment.yaml
+├── environment.yml
 ├── README.md
 └── parflowtools/
     ├── __init__.py
@@ -38,8 +32,6 @@ parflowtools/
 conda env create -f environment.yaml
 conda activate parflowenv
 ```
-
-
 
 ### 3. 本地安装
 
@@ -96,7 +88,6 @@ run_two
 
 ## 输出目录自定义
 
-
 默认输出目录为 `/data/wangzihan-data/outputs`。如果您希望将结果保存到其他位置，可以通过设置环境变量 `OUTPUT_DIR` 来覆盖：
 
 ```
@@ -131,6 +122,3 @@ run_two
 ## 许可证
 
 内部使用，请联系作者。
-
-
-
