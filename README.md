@@ -24,7 +24,7 @@
 
 myparflowtools/
 ├── setup.py
-├── environment.yml
+├── environment.yaml
 ├── README.md
 └── myparflowtools/
     ├── __init__.py
@@ -35,7 +35,7 @@ myparflowtools/
 ### 2. 使用 Conda 创建环境（推荐）
 
 ```
-conda env create -f environment.yml
+conda env create -f environment.yaml
 conda activate myparflowenv
 ```
 
