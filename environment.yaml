@@ -4,12 +4,11 @@ channels:
   - defaults
 dependencies:
   - python=3.12
-  - geopandas
-  - rasterio
-  - matplotlib
-  - numpy
-  - parflowio
-  - pftools
   - pip
   - pip:
+    - geopandas
+    - rasterio
+    - matplotlib
+    - numpy
+    - pftools
     - -e .
