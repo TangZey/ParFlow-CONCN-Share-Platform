@@ -44,7 +44,7 @@ def crop_pfb(pfb_path, mask_path, pos_json_path, out_pfb_path, verbose=True):
 
     # 确保输出为 float64
     pfb_result = pfb_result.astype(np.float64, copy=False)
-    write_pfb(out_pfb_path, pfb_result)
+    write_pfb(out_pfb_path, pfb_result,dx=961.72,dy=961.72,dz=200,dist=False)
     log(f"裁剪后 PFB 已保存: {out_pfb_path}")
     log(f"输出形状: {pfb_result.shape}")
     log(f"非零像素数（流域内）: {np.sum(pfb_result != 0)}")

@@ -5,7 +5,7 @@
 根据 PFBASID 自动识别对应的 PFBASn.shp 和 PFBASn.tif 文件
 直接调用函数，无需 subprocess
 支持裁剪多个 PFB 文件，输出文件名自动为“核心名称.流域编号.pfb”
-裁剪完成后，将 mask.tif 转换为 mask.pfb，再根据 mask.pfb 生成一个 VTK 和一个 PFSOL 文件
+裁剪完成后，将 mask.tif 转换为 mask.pfb，再根据 mask.pfb 生成 VTK 和 PFSOL 文件（按流域编码命名）
 """
 
 import os
@@ -27,12 +27,15 @@ except ImportError:
 from parflow.tools.io import read_pfb, write_pfb
 
 # ==================== 用户配置 ====================
+# ==================== 用户配置 ====================
 SHP_DIR = "/data/share/parflow-group/CONCN_Subbasins_Map/PFBAS/shp"
 TIF_DIR = "/data/share/parflow-group/CONCN_Subbasins_Map/PFBAS/geotiff"
 INPUT_PFB_DIR = "/data/share/parflow-group/CONCN1.1/inputs"
-import os
-DEFAULT_OUTPUT_DIR = "/data/wangzihan-data/outputs"
+
+# 输出目录：默认当前工作目录下的 outputs（自动创建），可通过环境变量 OUTPUT_DIR 覆盖
+DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(), "outputs")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", DEFAULT_OUTPUT_DIR)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 FIELD_NAME = "PFBAS_ID"
 OUT_MASK_TIF = os.path.join(OUTPUT_DIR, "mask.tif")
@@ -45,9 +48,6 @@ BOTTOM_PATCH_LABEL = 2
 SIDE_PATCH_LABEL = 3
 Z_TOP = 2000.0
 Z_BOTTOM = 0.0
-
-OUT_VTK = os.path.join(OUTPUT_DIR, "domain.vtk")
-OUT_PFSOL = os.path.join(OUTPUT_DIR, "domain.pfsol")
 
 PFB_INPUTS = [
     "CHN.slopex.2026.fix.pfb",
@@ -98,7 +98,7 @@ def convert_mask_tif_to_pfb(mask_tif_path, mask_pfb_path):
     with rasterio.open(mask_tif_path) as src:
         mask_2d = src.read(1).astype(np.uint8)   # 原值：1=内，0=外
     mask_3d = mask_2d[np.newaxis, :, :].astype(np.float64, order='C', copy=True)
-    write_pfb(mask_pfb_path, mask_3d)
+    write_pfb(mask_pfb_path, mask_3d,dx=961.72,dy=961.72,dz=200,dist=False)
     print(f"[转换] 掩膜 TIF 已转换为 PFB: {mask_pfb_path} (流域内=1, 流域外=0)")
 
 
@@ -111,7 +111,9 @@ def generate_domain_files(mask_pfb_path, vtk_path, pfsol_path, output_dir):
         "--bottom-patch-label", str(BOTTOM_PATCH_LABEL),
         "--side-patch-label", str(SIDE_PATCH_LABEL),
         "--z-top", str(Z_TOP),
-        "--z-bottom", str(Z_BOTTOM)
+        "--z-bottom", str(Z_BOTTOM),
+        # "--dx", 961.72
+        # "--dy", 961.72
     ]
     print(f"\n>>> 生成 VTK 和 PFSOL 文件（调用 pfmask-to-pfsol）")
     print(f"  执行命令: {' '.join(cmd)}")
@@ -130,7 +132,7 @@ def generate_domain_files(mask_pfb_path, vtk_path, pfsol_path, output_dir):
 
 
 def main():
-    ensure_dir(OUTPUT_DIR)
+   # ensure_dir(OUTPUT_DIR)
 
     pfbas_code = input("请输入14位流域编码（如01010105000000）: ").strip()
     if len(pfbas_code) != 14 or not pfbas_code.isdigit():
@@ -166,7 +168,10 @@ def main():
     print("\n>>> 转换掩膜：将 mask.tif 转换为 mask.pfb（保持内1外0）")
     convert_mask_tif_to_pfb(OUT_MASK_TIF, OUT_MASK_PFB)
 
-    generate_domain_files(OUT_MASK_PFB, OUT_VTK, OUT_PFSOL, OUTPUT_DIR)
+    # VTK 和 PFSOL 按流域编码命名
+    out_vtk = os.path.join(OUTPUT_DIR, f"{pfbas_code}.vtk")
+    out_pfsol = os.path.join(OUTPUT_DIR, f"{pfbas_code}.pfsol")
+    generate_domain_files(OUT_MASK_PFB, out_vtk, out_pfsol, OUTPUT_DIR)
 
     print("\n>>> 程序二：裁剪 PFB 文件")
     for input_file in PFB_INPUTS:
@@ -191,8 +196,8 @@ def main():
     print(f"掩膜 TIF: {OUT_MASK_TIF}")
     print(f"掩膜 PFB: {OUT_MASK_PFB}")
     print(f"位置文件: {OUT_JSON}")
-    print(f"VTK 文件: {OUT_VTK}")
-    print(f"PFSOL 文件: {OUT_PFSOL}")
+    print(f"VTK 文件: {out_vtk}")
+    print(f"PFSOL 文件: {out_pfsol}")
     for input_file in PFB_INPUTS:
         output_file = get_output_filename(os.path.join(INPUT_PFB_DIR, input_file), pfbas_code)
         print(f"裁剪结果: {output_file}")
