@@ -27,7 +27,6 @@ except ImportError:
 from parflow.tools.io import read_pfb, write_pfb
 
 # ==================== 用户配置 ====================
-# ==================== 用户配置 ====================
 SHP_DIR = "/data/share/parflow-group/CONCN_Subbasins_Map/PFBAS/shp"
 TIF_DIR = "/data/share/parflow-group/CONCN_Subbasins_Map/PFBAS/geotiff"
 INPUT_PFB_DIR = "/data/share/parflow-group/CONCN1.1/inputs"
@@ -98,7 +97,7 @@ def convert_mask_tif_to_pfb(mask_tif_path, mask_pfb_path):
     with rasterio.open(mask_tif_path) as src:
         mask_2d = src.read(1).astype(np.uint8)   # 原值：1=内，0=外
     mask_3d = mask_2d[np.newaxis, :, :].astype(np.float64, order='C', copy=True)
-    write_pfb(mask_pfb_path, mask_3d,dx=961.72,dy=961.72,dz=200,dist=False)
+    write_pfb(mask_pfb_path, mask_3d)
     print(f"[转换] 掩膜 TIF 已转换为 PFB: {mask_pfb_path} (流域内=1, 流域外=0)")
 
 
@@ -111,9 +110,7 @@ def generate_domain_files(mask_pfb_path, vtk_path, pfsol_path, output_dir):
         "--bottom-patch-label", str(BOTTOM_PATCH_LABEL),
         "--side-patch-label", str(SIDE_PATCH_LABEL),
         "--z-top", str(Z_TOP),
-        "--z-bottom", str(Z_BOTTOM),
-        # "--dx", 961.72
-        # "--dy", 961.72
+        "--z-bottom", str(Z_BOTTOM)
     ]
     print(f"\n>>> 生成 VTK 和 PFSOL 文件（调用 pfmask-to-pfsol）")
     print(f"  执行命令: {' '.join(cmd)}")
@@ -132,8 +129,6 @@ def generate_domain_files(mask_pfb_path, vtk_path, pfsol_path, output_dir):
 
 
 def main():
-   # ensure_dir(OUTPUT_DIR)
-
     pfbas_code = input("请输入14位流域编码（如01010105000000）: ").strip()
     if len(pfbas_code) != 14 or not pfbas_code.isdigit():
         print("错误：编码应为14位数字")
