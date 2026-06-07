@@ -6,6 +6,7 @@
 直接调用函数，无需 subprocess
 支持裁剪多个 PFB 文件，输出文件名自动为“核心名称.流域编号.pfb”
 裁剪完成后，将 mask.tif 转换为 mask.pfb，再根据 mask.pfb 生成 VTK 和 PFSOL 文件（按流域编码命名）
+完成后自动删除所有 .dist 文件
 """
 
 import os
@@ -67,9 +68,9 @@ def get_output_filename(input_filename, basin_code):
     mapping = {
         "CHN.slopex.2026.fix.pfb": "slopex",
         "CHN.slopey.2026.fix.pfb": "slopey",
-        "Shangguan_300m_FBZ_fix.pfb": "Shangguan",
-        "CONCN_manning.fix.2026.pfb": "CONCN_manning",
-        "GLHYMPS1.0_multi_efold_fix.pfb": "GLHYMPS1.0"
+        "Shangguan_300m_FBZ_fix.pfb": "bedrock",
+        "CONCN_manning.fix.2026.pfb": "manning",
+        "GLHYMPS1.0_multi_efold_fix.pfb": "subsurface"
     }
     base_name = os.path.basename(input_filename)
     if base_name not in mapping:
@@ -186,6 +187,15 @@ def main():
             out_pfb_path=output_path,
             verbose=True
         )
+
+    # 删除所有 .dist 文件
+    dist_files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith('.dist')]
+    for f in dist_files:
+        os.remove(os.path.join(OUTPUT_DIR, f))
+    if dist_files:
+        print(f"已清理 {len(dist_files)} 个 .dist 文件")
+    else:
+        print("没有 .dist 文件需要清理")
 
     print("\n=== 全部完成 ===")
     print(f"掩膜 TIF: {OUT_MASK_TIF}")
