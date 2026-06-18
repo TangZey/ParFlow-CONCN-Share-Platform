@@ -97,7 +97,7 @@ def convert_mask_tif_to_pfb(mask_tif_path, mask_pfb_path):
     with rasterio.open(mask_tif_path) as src:
         mask_2d = src.read(1).astype(np.uint8)   # 原值：1=内，0=外
     mask_3d = mask_2d[np.newaxis, :, :].astype(np.float64, order='C', copy=True)
-    write_pfb(mask_pfb_path, mask_3d)
+    write_pfb(mask_pfb_path, mask_3d,dx=961.72,dy=961.72,dz=200,dist=False)
     print(f"[转换] 掩膜 TIF 已转换为 PFB: {mask_pfb_path} (流域内=1, 流域外=0)")
 
 

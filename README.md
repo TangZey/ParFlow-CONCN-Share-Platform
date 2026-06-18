@@ -7,7 +7,31 @@ ParFlow-CONCN 1.0模型是约1公里水平分辨率，纵深492m的地表水-地
 
 **若您使用了本工具及生成的文件用于生产、研究，请引用：**  
 Yang C, Jia ZT, Xu WJ, Wei ZW, Zhang XL, Zou YG, Mcdonnell JJ, Condon LE, Dai YJ, Maxwell RM, 2025. CONCN: a high-resolution, integrated surface water-groundwater ParFlow modeling platform of continental China. Hydrology and Earth System Sciences, 29(9): 220-2218.  
+## CONCN 流域分级
 
+CONCN流域分级使用 14 位固定编码体系来表示，每升一级增加 2 位有效数字，剩余位数以 0 填充。
+
+![PFBAS2 basins](Fig/pfbas2_basins.png)
+
+| 级别 | 有效位数 | 流域数量 | 说明 |
+|------|----------|----------|------|
+| PFBAS2 | 2 位 | 10 个 | 一级流域 |
+| PFBAS4 | 4 位 | 127 个 | 二级子流域 |
+| PFBAS6 | 6 位 | 367 个 | 三级子流域 |
+| PFBAS8 | 8 位 | 1,215 个 | 四级子流域 |
+| PFBAS10 | 10 位 | 3,988 个 | 五级子流域 |
+| PFBAS12 | 12 位 | 12,118 个 | 六级子流域 |
+| PFBAS14 | 14 位 | 53,040 个 | 七级子流域  |
+
+| 级别 | 有效位数 | 编码示例 | 说明 |
+|------|---------|---------|------|
+| PFBAS2 | 2位 | `01000000000000` | 第1个一级流域 |
+| PFBAS4 | 4位 | `01020000000000` | 01流域的第2个子流域 |
+| PFBAS6 | 6位 | `01020300000000` | 0102流域的第3个子流域 |
+| PFBAS8 | 8位 | `01020301000000` | 010203流域的第1个子流域 |
+| PFBAS10 | 10位 | `01020301040000` | 01020301流域的第4个子流域 |
+| PFBAS12 | 12位 | `01020301040500` | 0102030104流域的第5个子流域 |
+| PFBAS14 | 14位 | `01020301040506` | 010203010405流域的第6个子流域 |
 ## 项目结构如下：
 
 ```
