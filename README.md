@@ -11,6 +11,8 @@ Yang C, Jia ZT, Xu WJ, Wei ZW, Zhang XL, Zou YG, Mcdonnell JJ, Condon LE, Dai YJ
 
 CONCN流域分级使用 14 位固定编码体系来表示，每升一级增加 2 位有效数字，剩余位数以 0 填充。
 
+需注意的是，当前 CONCN 流域分级边界与实际自然流域边界存在一定差异（如长江流域、淮河流域）。这是因为分级过程中使用了 HydroBASINS 和 MERIT Basins 等外部流域数据进行辅助划分，而这些数据集在流域边界刻画和河网汇流关系表达上与实际情况存在差异
+
 ![PFBAS2 basins](Fig/pfbas2_basins.png)
 
 | 级别 | 有效位数 | 流域数量 | 说明 |
