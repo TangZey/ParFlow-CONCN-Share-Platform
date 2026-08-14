@@ -137,6 +137,7 @@ export default {
       currentWatershed: null,
       loading: false,
       downloading: false,
+      maxBatchDownloads: 10,
       mapCenter: [116.40769, 39.89945], // 默认中心（首次加载使用，搜索后不再更新）
       // 流域边界
       boundaryData: null,      // 当前显示的全量边界 GeoJSON
@@ -148,6 +149,7 @@ export default {
     };
   },
   mounted() {
+    this.loadRuntimeConfig();
     // 默认显示第 2 级流域边界（触发 watcher → loadBoundaries(2)）
     // 不做自动搜索: 不产生高亮 → 所有级别默认都是蓝色，点击"搜索"后才橙色
     if (!this.searchForm.level) {
@@ -183,6 +185,16 @@ export default {
     },
   },
   methods: {
+    async loadRuntimeConfig() {
+      try {
+        const response = await axios.get(`${API_BASE}/api/config`);
+        const limit = Number(response.data.maxBatchDownloads);
+        if (Number.isInteger(limit) && limit > 0) this.maxBatchDownloads = limit;
+      } catch (error) {
+        console.warn('未能加载后端配置，使用默认批量下载上限:', error);
+      }
+    },
+
     async handleSearch() {
       this.loading = true;
       try {
@@ -237,6 +249,12 @@ export default {
         alert('没有可下载的数据，请先搜索。');
         return;
       }
+      if (this.tableData.length > this.maxBatchDownloads) {
+        this.$message.warning(
+          `搜索结果共 ${this.tableData.length} 个，单次最多下载 ${this.maxBatchDownloads} 个，请缩小搜索范围。`
+        );
+        return;
+      }
       await this.downloadByIds(this.tableData.map((row) => row.id));
     },
 
@@ -279,7 +297,16 @@ export default {
         window.URL.revokeObjectURL(url);
       } catch (error) {
         console.error('下载失败:', error);
-        alert('下载失败，请检查后端服务。');
+        let message = '下载失败，请检查后端服务。';
+        if (error.response?.data instanceof Blob) {
+          try {
+            const payload = JSON.parse(await error.response.data.text());
+            if (payload.error) message = payload.error;
+          } catch (_) {
+            // 非 JSON 错误响应，保留通用提示
+          }
+        }
+        this.$message.error(message);
       } finally {
         this.downloading = false;
       }

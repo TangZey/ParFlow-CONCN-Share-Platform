@@ -5,12 +5,20 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 class Config:
+    DEBUG = os.getenv('FLASK_DEBUG', '').lower() in {'1', 'true', 'yes'}
+
     # 数据库 URI（SQLite）
     SQLALCHEMY_DATABASE_URI = f'sqlite:///{BASE_DIR / "instance" / "watershed.db"}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # 临时文件保存目录（用于存放裁剪结果打包文件）
-    UPLOAD_FOLDER = BASE_DIR / 'uploads'
+    # 每次下载使用独立任务目录，避免并发请求互相覆盖
+    JOB_ROOT = Path(os.getenv('CONCN_JOB_ROOT', BASE_DIR / 'jobs'))
+    MAX_BATCH_DOWNLOADS = int(os.getenv('CONCN_MAX_BATCH_DOWNLOADS', '10'))
+    ALLOWED_ORIGINS = [
+        origin.strip()
+        for origin in os.getenv('CONCN_ALLOWED_ORIGINS', '*').split(',')
+        if origin.strip()
+    ]
     
     # 最大上传/下载文件大小（100MB）
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024
@@ -19,4 +27,13 @@ class Config:
     BOUNDARY_CACHE_DIR = BASE_DIR / 'boundary_cache'
 
     # SHP 文件目录（默认 Linux 服务器路径，本地开发设环境变量 SHP_DIR 覆盖）
-    SHP_DIR = os.getenv('SHP_DIR', '/data/share/parflow-group/CONCN_Subbasins_Map/PFBAS/shp')
+    SHP_DIR = os.getenv(
+        'CONCN_SHP_DIR',
+        '/data/share/parflow-group/CONCN_Subbasins_Map/PFBAS/shp',
+    )
+
+    # Flask 托管前端时使用；固定集群路径保留为默认值
+    DIST_DIR = Path(os.getenv(
+        'CONCN_DIST_DIR',
+        '/data/wangzihan-data/parflow-website/dist',
+    ))

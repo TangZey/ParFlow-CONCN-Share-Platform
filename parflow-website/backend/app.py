@@ -1,5 +1,4 @@
 import os
-import zipfile
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
@@ -13,12 +12,24 @@ def create_app():
     app.config.from_object(Config)
     app.config['JSON_AS_ASCII'] = False
 
-    Path(app.config['UPLOAD_FOLDER']).mkdir(parents=True, exist_ok=True)
+    database_path = Path(app.config['SQLALCHEMY_DATABASE_URI'].removeprefix('sqlite:///'))
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    Path(app.config['JOB_ROOT']).mkdir(parents=True, exist_ok=True)
+    Path(app.config['BOUNDARY_CACHE_DIR']).mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
-    CORS(app)
+    CORS(app, resources={r'/api/*': {'origins': app.config['ALLOWED_ORIGINS']}})
+
+    with app.app_context():
+        db.create_all()
 
     # ---------- API 路由 ----------
+    @app.route('/api/config', methods=['GET'])
+    def public_config():
+        return jsonify({
+            'maxBatchDownloads': app.config['MAX_BATCH_DOWNLOADS'],
+        })
+
     @app.route('/api/watersheds', methods=['GET'])
     def search_watersheds():
         keyword = request.args.get('keyword', '').strip()
@@ -59,9 +70,14 @@ def create_app():
         else:
             return jsonify({'error': 'ids 必须是字符串或列表'}), 400
 
-        ids = [i for i in ids if i.strip()]
+        ids = [i.strip() for i in ids if i.strip()]
+        ids = list(dict.fromkeys(ids))
         if not ids:
             return jsonify({'error': 'ids 不能为空'}), 400
+        if len(ids) > app.config['MAX_BATCH_DOWNLOADS']:
+            return jsonify({
+                'error': f'单次最多下载 {app.config["MAX_BATCH_DOWNLOADS"]} 个流域'
+            }), 400
 
         existing_ids = [w.id for w in Watershed.query.filter(Watershed.id.in_(ids)).all()]
         invalid_ids = [i for i in ids if i not in existing_ids]
@@ -69,12 +85,11 @@ def create_app():
             return jsonify({'error': f'以下编号不存在: {invalid_ids}'}), 404
 
         try:
-            zip_path = run_clip(ids, Path(app.config['UPLOAD_FOLDER']))
+            zip_path = run_clip(ids, Path(app.config['JOB_ROOT']))
             return send_file(zip_path, as_attachment=True)
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({'error': f'裁剪或打包失败: {str(e)}'}), 500
+        except Exception:
+            app.logger.exception('裁剪或打包失败，流域编号: %s', ids)
+            return jsonify({'error': '裁剪或打包失败，请联系管理员查看服务日志'}), 500
 
     # ---------- 流域边界 API ----------
     @app.route('/api/boundaries', methods=['GET'])
@@ -83,8 +98,7 @@ def create_app():
         return get_boundaries()
 
     # ---------- 前端静态文件服务 ----------
-    # 修正为你的实际路径
-    DIST_DIR = '/data/wangzihan-data/parflow-website/dist'
+    dist_dir = Path(app.config['DIST_DIR'])
 
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
@@ -94,12 +108,12 @@ def create_app():
             return '', 404
 
         # 尝试返回静态文件
-        full_path = os.path.join(DIST_DIR, path)
+        full_path = dist_dir / path
         if path != '' and os.path.exists(full_path) and os.path.isfile(full_path):
-            return send_from_directory(DIST_DIR, path)
+            return send_from_directory(dist_dir, path)
         else:
             # 返回 index.html（支持 Vue Router）
-            return send_from_directory(DIST_DIR, 'index.html')
+            return send_from_directory(dist_dir, 'index.html')
 
     return app
 
@@ -107,43 +121,6 @@ def create_app():
 # ---------- 创建应用实例（供 gunicorn 使用） ----------
 app = create_app()
 
-# ---------- 初始化数据库（首次运行） ----------
-with app.app_context():
-    db.create_all()
-    if Watershed.query.count() == 0:
-        sample_data = [
-            Watershed(
-                id='01010105000000',
-                name='长江上游',
-                region='长江流域',
-                level=2,
-                lng=102.2,
-                lat=28.5,
-                description='位于青藏高原至宜昌段，水资源丰富。'
-            ),
-            Watershed(
-                id='01010106000000',
-                name='黄河中游',
-                region='黄河流域',
-                level=4,
-                lng=110.3,
-                lat=37.6,
-                description='流经黄土高原，泥沙含量大。'
-            ),
-            Watershed(
-                id='01010107000000',
-                name='淮河干流',
-                region='淮河流域',
-                level=6,
-                lng=117.1,
-                lat=33.2,
-                description='介于长江与黄河之间，是重要的农业区。'
-            ),
-        ]
-        db.session.bulk_save_objects(sample_data)
-        db.session.commit()
-        print("示例数据已插入数据库。")
-
 # ---------- 直接运行（开发/测试） ----------
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=50001)
+    app.run(debug=app.config['DEBUG'], host='0.0.0.0', port=50001)
