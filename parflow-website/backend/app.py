@@ -28,6 +28,8 @@ def create_app():
     def public_config():
         return jsonify({
             'maxBatchDownloads': app.config['MAX_BATCH_DOWNLOADS'],
+            'fullBoundaryMaxLevel': app.config['FULL_BOUNDARY_MAX_LEVEL'],
+            'maxBoundaryFeatures': app.config['MAX_BOUNDARY_FEATURES'],
         })
 
     @app.route('/api/watersheds', methods=['GET'])
@@ -94,7 +96,7 @@ def create_app():
     # ---------- 流域边界 API ----------
     @app.route('/api/boundaries', methods=['GET'])
     def boundaries():
-        """返回流域边界 GeoJSON（按级别或按 id 筛选）"""
+        """返回流域边界 GeoJSON（低等级全量，或按 id/bbox 筛选）"""
         return get_boundaries()
 
     # ---------- 前端静态文件服务 ----------

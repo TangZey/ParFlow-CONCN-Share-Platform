@@ -52,5 +52,23 @@ python import_csv.py /path/to/watershed_info.csv --replace
 - `CONCN_DIST_DIR`
 - `CONCN_JOB_ROOT`
 - `CONCN_MAX_BATCH_DOWNLOADS`，默认 `10`
+- `CONCN_FULL_BOUNDARY_MAX_LEVEL`，允许全国全量加载的最高级别，默认 `8`
+- `CONCN_MAX_BOUNDARY_FEATURES`，单次视野边界上限，默认 `5000`
+- `CONCN_MAX_BOUNDARY_IDS`，单次按 ID 查询上限，默认 `200`
 - `CONCN_ALLOWED_ORIGINS`，多个来源用逗号分隔，内测默认 `*`
 - `FLASK_DEBUG`，仅开发调试时设置为 `1`
+
+## 边界加载策略
+
+- PFBAS2～8 使用预生成的全国 GeoJSON/gzip 缓存。
+- PFBAS10～14 根据当前地图 `bbox` 从原始 SHP 局部读取。
+- 搜索定位使用 `ids` 参数，只读取命中的流域，不再加载该等级全国边界。
+
+接口示例：
+
+```text
+GET /api/boundaries?level=14&ids=01020301040506
+GET /api/boundaries?level=14&bbox=110,30,111,31
+```
+
+如果当前视野返回的流域数超过上限，接口会要求继续放大地图。

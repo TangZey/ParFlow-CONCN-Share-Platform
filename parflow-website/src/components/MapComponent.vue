@@ -100,8 +100,12 @@ export default {
       type: Boolean,
       default: false,
     },
+    autoFitBoundaries: {
+      type: Boolean,
+      default: true,
+    },
   },
-  emits: ['polygon-click', 'info-download'],
+  emits: ['polygon-click', 'info-download', 'viewport-change'],
   data() {
     return {
       map: null,
@@ -111,7 +115,12 @@ export default {
       infoVisible: false,      // 浮动信息卡显示状态（关闭只隐藏卡片, 不清空数据）
       _clickFid: null,         // 当前点击高亮的流域 id（点击高亮, 与搜索高亮相互覆盖）
       _skipNextHighlightRender: false, // 点击高亮后跳过父组件同步 highlightIds 触发的重渲染
+      viewportTimer: null,
     };
+  },
+  created() {
+    // 非响应式索引，避免 Vue 代理天地图 Polygon 实例。
+    this._polygonById = new Map();
   },
   watch: {
     center: {
@@ -125,13 +134,12 @@ export default {
     boundaryData: {
       handler(newData) {
         if (newData && newData.features) {
-          // 边界数据变化时渲染，并自动缩放视野以显示全部边界
-          this.renderBoundaries(newData, true);
+          this.renderBoundaries(newData, this.autoFitBoundaries);
         } else {
           this.clearBoundaries();
         }
       },
-      deep: true,
+      deep: false,
     },
     highlightIds: {
       handler() {
@@ -141,12 +149,9 @@ export default {
           this._skipNextHighlightRender = false;
           return;
         }
-        // 有边界数据时重新渲染（用新颜色标记高亮），不改变视野
-        if (this.boundaryData && this.boundaryData.features) {
-          this.renderBoundaries(this.boundaryData, false);
-        }
+        this._applyHighlightStyles();
       },
-      deep: true,
+      deep: false,
     },
     watershedInfo: {
       handler(newInfo) {
@@ -176,6 +181,7 @@ export default {
   beforeUnmount() {
     document.removeEventListener('fullscreenchange', this.onFullscreenChange);
     document.removeEventListener('webkitfullscreenchange', this.onFullscreenChange);
+    if (this.viewportTimer) clearTimeout(this.viewportTimer);
     if (this.map) {
       try {
         if (typeof this.map.dispose === 'function') {
@@ -205,7 +211,9 @@ export default {
           const z = this.map.getZoom();
           if (z > 18) this.map.setZoom(18);
           if (z < 3) this.map.setZoom(3);
+          this._scheduleViewportChange();
         });
+        this.map.addEventListener('moveend', () => this._scheduleViewportChange());
 
         // 2. 设置中心点和缩放
         const center = new T.LngLat(this.center[0], this.center[1]);
@@ -284,6 +292,43 @@ export default {
       if (window) window.dispatchEvent(new Event('resize'));
     },
 
+    _pointValue(point, axis) {
+      if (!point) return null;
+      const method = axis === 'lng' ? 'getLng' : 'getLat';
+      if (typeof point[method] === 'function') return Number(point[method]());
+      if (point[axis] !== undefined) return Number(point[axis]);
+      return null;
+    },
+
+    getViewportState() {
+      if (!this.map || typeof this.map.getBounds !== 'function') return null;
+      const bounds = this.map.getBounds();
+      const southwest = bounds?.getSouthWest?.();
+      const northeast = bounds?.getNorthEast?.();
+      const bbox = [
+        this._pointValue(southwest, 'lng'),
+        this._pointValue(southwest, 'lat'),
+        this._pointValue(northeast, 'lng'),
+        this._pointValue(northeast, 'lat'),
+      ];
+      if (bbox.some((value) => !Number.isFinite(value))) return null;
+      return { bbox, zoom: Number(this.map.getZoom()) };
+    },
+
+    ensureZoom(minimumZoom) {
+      if (this.map && this.map.getZoom() < minimumZoom) {
+        this.map.setZoom(minimumZoom);
+      }
+    },
+
+    _scheduleViewportChange() {
+      if (this.viewportTimer) clearTimeout(this.viewportTimer);
+      this.viewportTimer = setTimeout(() => {
+        const viewport = this.getViewportState();
+        if (viewport) this.$emit('viewport-change', viewport);
+      }, 200);
+    },
+
     // ---- 兼容不同天地图版本：v2.0 用 addOverLay（L 大写），v3/v4 用 addOverlay ----
     _addOverlay(overlay) {
       const fn = this.map.addOverlay || this.map.addOverLay;
@@ -306,6 +351,7 @@ export default {
         this._removeOverlay(p);
       });
       this.boundaryOverlays = [];
+      this._polygonById.clear();
     },
 
     renderBoundaries(geojson, fitViewport = false) {
@@ -346,7 +392,7 @@ export default {
         this.fitToBoundaries(geojson);
       }
 
-      // 分批渲染：大级别（如 14 级 5 万多个多边形）一次性创建会卡死浏览器
+      // 分批渲染：局部查询仍可能返回数千个多边形，避免阻塞浏览器主线程
       const BATCH_SIZE = 1500;
       let index = 0;
       const addNextBatch = () => {
@@ -367,10 +413,16 @@ export default {
     // 自动缩放视野以显示全部边界（天地图 setViewport）
     fitToBoundaries(geojson) {
       if (!this.map || !geojson || !geojson.features) return;
-      const points = [];
+      let minLng = Infinity;
+      let minLat = Infinity;
+      let maxLng = -Infinity;
+      let maxLat = -Infinity;
       const walk = (coords) => {
         if (typeof coords[0] === 'number') {
-          points.push(new T.LngLat(coords[0], coords[1]));
+          minLng = Math.min(minLng, coords[0]);
+          minLat = Math.min(minLat, coords[1]);
+          maxLng = Math.max(maxLng, coords[0]);
+          maxLat = Math.max(maxLat, coords[1]);
         } else {
           coords.forEach(walk);
         }
@@ -378,8 +430,11 @@ export default {
       geojson.features.forEach((feature) => {
         if (feature.geometry) walk(feature.geometry.coordinates);
       });
-      if (points.length > 0) {
-        this.map.setViewport(points);
+      if (Number.isFinite(minLng)) {
+        this.map.setViewport([
+          new T.LngLat(minLng, minLat),
+          new T.LngLat(maxLng, maxLat),
+        ]);
       }
     },
 
@@ -418,6 +473,18 @@ export default {
 
       this._addOverlay(polygon);
       this.boundaryOverlays.push(polygon);
+      if (fid) {
+        if (!this._polygonById.has(fid)) this._polygonById.set(fid, []);
+        this._polygonById.get(fid).push(polygon);
+      }
+    },
+
+    _applyHighlightStyles() {
+      const highlighted = new Set((this.highlightIds || []).map(String));
+      this._polygonById.forEach((polygons, fid) => {
+        const style = highlighted.has(fid) ? HIGHLIGHT_STYLE : DEFAULT_STYLE;
+        polygons.forEach((polygon) => polygon.setStyle?.(style));
+      });
     },
 
     // 就地高亮指定流域（恢复其他流域为各自初始样式，再把高亮样式套到目标流域上）。
@@ -429,8 +496,8 @@ export default {
           if (typeof poly.setStyle === 'function') {
             poly.setStyle(HIGHLIGHT_STYLE);
           }
-        } else if (poly._baseStyle && typeof poly.setStyle === 'function') {
-          poly.setStyle(poly._baseStyle);
+        } else if (typeof poly.setStyle === 'function') {
+          poly.setStyle(DEFAULT_STYLE);
         }
       });
     },

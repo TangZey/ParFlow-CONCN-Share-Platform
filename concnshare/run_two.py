@@ -64,7 +64,7 @@ def convert_mask_tif_to_pfb(mask_tif_path, mask_pfb_path, config=None):
     config = config or ClipConfig()
     with rasterio.open(mask_tif_path) as src:
         mask_2d = src.read(1).astype(np.uint8)
-    mask_3d = mask_2d[np.newaxis, :, :].astype(np.float64, order="C", copy=True)
+    mask_3d = mask_2d[np.newaxis, ::-1, :].astype(np.float64, order="C", copy=True)
     write_pfb(
         str(mask_pfb_path),
         mask_3d,

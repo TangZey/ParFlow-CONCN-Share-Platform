@@ -30,6 +30,7 @@
             placeholder="请选择级别"
             clearable
             style="width: 140px;"
+            @change="handleLevelChange"
           >
             <el-option
               v-for="num in levelOptions"
@@ -67,8 +68,10 @@
             :highlight-ids="highlightIds"
             :watershed-info="currentWatershed"
             :info-download-loading="downloading"
+            :auto-fit-boundaries="boundaryAutoFit"
             @polygon-click="onPolygonClick"
             @info-download="downloadCurrentWatershed"
+            @viewport-change="onViewportChange"
           />
         </el-card>
       </el-col>
@@ -111,6 +114,7 @@
 
 <script>
 import axios from 'axios';
+import { markRaw } from 'vue';
 import MapComponent from '@/components/MapComponent.vue';
 import { formatBBox, formatArea } from '@/utils/format';
 
@@ -138,10 +142,16 @@ export default {
       loading: false,
       downloading: false,
       maxBatchDownloads: 10,
+      fullBoundaryMaxLevel: 8,
       mapCenter: [116.40769, 39.89945], // 默认中心（首次加载使用，搜索后不再更新）
       // 流域边界
-      boundaryData: null,      // 当前显示的全量边界 GeoJSON
+      boundaryData: null,      // 当前显示的全量或局部边界 GeoJSON
       boundaryLevel: null,     // 当前加载的边界级别
+      boundaryAutoFit: true,   // 是否在边界加载后自动缩放至数据范围
+      boundaryQueryMode: 'full', // full / ids / viewport
+      boundaryRequestSerial: 0,  // 丢弃较旧异步请求的响应
+      boundaryAbortController: null,
+      viewportLoadTimer: null,
       highlightIds: [],        // 搜索命中的流域 id（用于高亮）
       pendingFocus: null,      // 搜索后待定位的流域 { lng, lat, level }（等边界加载完成后执行）
       infoPanelVisible: true,  // 右侧流域信息栏是否展开（折叠后地图占满，显示恢复按钮）
@@ -150,11 +160,16 @@ export default {
   },
   mounted() {
     this.loadRuntimeConfig();
-    // 默认显示第 2 级流域边界（触发 watcher → loadBoundaries(2)）
+    // 默认显示第 2 级全国流域边界
     // 不做自动搜索: 不产生高亮 → 所有级别默认都是蓝色，点击"搜索"后才橙色
     if (!this.searchForm.level) {
       this.searchForm.level = 2;
     }
+    this.loadBoundaries(this.searchForm.level);
+  },
+  beforeUnmount() {
+    if (this.viewportLoadTimer) clearTimeout(this.viewportLoadTimer);
+    this.boundaryAbortController?.abort();
   },
   computed: {
     // 当前流域的经纬度范围文本（如 "N26.12 S25.13 W114.22 E115.34"）
@@ -167,12 +182,6 @@ export default {
     },
   },
   watch: {
-    'searchForm.level'(newLevel, oldLevel) {
-      // 级别变化时加载对应边界
-      if (newLevel !== oldLevel) {
-        this.loadBoundaries(newLevel);
-      }
-    },
     // 信息栏折叠/展开改变列宽后，地图容器尺寸变化 → 等布局完成再通知地图重算，避免瓦片错位/留白
     infoPanelVisible() {
       this.$nextTick(() => {
@@ -185,11 +194,21 @@ export default {
     },
   },
   methods: {
+    handleLevelChange(level) {
+      this.pendingFocus = null;
+      this.highlightIds = [];
+      this.loadBoundaries(level);
+    },
+
     async loadRuntimeConfig() {
       try {
         const response = await axios.get(`${API_BASE}/api/config`);
         const limit = Number(response.data.maxBatchDownloads);
         if (Number.isInteger(limit) && limit > 0) this.maxBatchDownloads = limit;
+        const fullBoundaryLevel = Number(response.data.fullBoundaryMaxLevel);
+        if (Number.isInteger(fullBoundaryLevel) && fullBoundaryLevel >= 2) {
+          this.fullBoundaryMaxLevel = fullBoundaryLevel;
+        }
       } catch (error) {
         console.warn('未能加载后端配置，使用默认批量下载上限:', error);
       }
@@ -226,7 +245,7 @@ export default {
           this.highlightIds = [];
         }
         // 搜索到流域：切换到该流域的级别，并把流域移到地图中央
-        this.focusOnSearchResult();
+        await this.focusOnSearchResult();
       } catch (error) {
         console.error('搜索失败:', error);
         alert('搜索失败，请检查后端服务是否运行');
@@ -236,12 +255,12 @@ export default {
     },
 
     resetSearch() {
-      // 重置: 清空搜索条件与结果, 边界随 level=null 由 watcher 清空(loadBoundaries(null) 会清高亮)
       this.searchForm.keyword = '';
       this.searchForm.region = '';
       this.searchForm.level = null;
       this.tableData = [];
       this.currentWatershed = null;
+      this.loadBoundaries(null);
     },
 
     async handleDownload() {
@@ -313,32 +332,94 @@ export default {
     },
 
     // ---- 流域边界加载 ----
-    async loadBoundaries(level) {
+    async loadBoundaries(level, options = {}) {
       if (!level) {
+        this.boundaryRequestSerial += 1;
+        this.boundaryAbortController?.abort();
         this.boundaryData = null;
         this.boundaryLevel = null;
         this.highlightIds = [];
         return;
       }
 
-      // 所有级别均全量加载（10/12/14 级已由后端简化；前端分批渲染防卡顿）
-      this.boundaryData = null;
+      const requestSerial = ++this.boundaryRequestSerial;
+      this.boundaryAbortController?.abort();
+      this.boundaryAbortController = null;
       this.boundaryLevel = level;
+      const ids = options.ids || null;
+      let bbox = options.bbox || null;
+      const highLevel = level > this.fullBoundaryMaxLevel;
+      const minimumZoom = { 10: 7, 12: 8, 14: 9 }[level];
+
+      if (!ids && highLevel && !bbox) {
+        const viewport = this.$refs.mapComponent?.getViewportState();
+        this.boundaryQueryMode = 'viewport';
+        this.boundaryAutoFit = false;
+        if (!viewport) return;
+        if (viewport.zoom < minimumZoom) {
+          this.boundaryData = null;
+          this.$message.info(`PFBAS${level} 将按当前视野加载，正在放大地图…`);
+          this.$refs.mapComponent?.ensureZoom(minimumZoom);
+          return;
+        }
+        bbox = viewport.bbox;
+      }
+
+      const params = { level };
+      if (ids) params.ids = ids.join(',');
+      if (bbox) params.bbox = bbox.join(',');
+
+      this.boundaryQueryMode = ids ? 'ids' : (bbox ? 'viewport' : 'full');
+      this.boundaryAutoFit = options.fitViewport ?? (Boolean(ids) || !highLevel);
+      const controller = new AbortController();
+      this.boundaryAbortController = controller;
+      let loaded = false;
       try {
         const response = await axios.get(`${API_BASE}/api/boundaries`, {
-          params: { level },
+          params,
           timeout: 120000,
+          signal: controller.signal,
         });
-        this.boundaryData = response.data;
+        if (requestSerial !== this.boundaryRequestSerial) return;
+        this.boundaryData = markRaw(response.data);
         // 建立 "流域 id → 包围盒" 索引，供信息栏显示经纬度范围
         this.bboxMap = this._buildBBoxMap(response.data);
+        if (this.currentWatershed) {
+          this.currentWatershed = this._attachBBox(this.currentWatershed);
+        }
+        loaded = true;
       } catch (error) {
+        if (error.code === 'ERR_CANCELED') return;
+        if (requestSerial !== this.boundaryRequestSerial) return;
         console.error('加载边界失败:', error);
-        this.$message.error('加载流域边界失败，请检查后端服务');
+        const message = error.response?.data?.error || '加载流域边界失败，请检查后端服务';
+        if (error.response?.status === 422) this.$message.warning(message);
+        else this.$message.error(message);
         this.boundaryData = null;
+      } finally {
+        if (this.boundaryAbortController === controller) {
+          this.boundaryAbortController = null;
+        }
       }
-      // 边界就绪后执行搜索跳转的待定定位（放在边界加载完成后，避免被自动缩放视野覆盖）
-      this._flushPendingFocus();
+      if (ids && loaded) this._flushPendingFocus();
+    },
+
+    onViewportChange(viewport) {
+      if (this.boundaryQueryMode !== 'viewport' || !this.searchForm.level) return;
+      const minimumZoom = { 10: 7, 12: 8, 14: 9 }[this.searchForm.level];
+      if (!minimumZoom) return;
+      if (viewport.zoom < minimumZoom) {
+        this.boundaryRequestSerial += 1;
+        this.boundaryData = null;
+        return;
+      }
+      if (this.viewportLoadTimer) clearTimeout(this.viewportLoadTimer);
+      this.viewportLoadTimer = setTimeout(() => {
+        this.loadBoundaries(this.searchForm.level, {
+          bbox: viewport.bbox,
+          fitViewport: false,
+        });
+      }, 250);
     },
 
     // 从边界 GeoJSON 建立 "流域 id → 包围盒" 索引（坐标顺序 [lng, lat]）
@@ -349,6 +430,11 @@ export default {
         const props = feature.properties || {};
         const fid = String(props.PFBAS_ID || props.id || '');
         if (!fid || !feature.geometry) return;
+        if (Array.isArray(feature.bbox) && feature.bbox.length === 4) {
+          const [minLng, minLat, maxLng, maxLat] = feature.bbox.map(Number);
+          map[fid] = { minLng, minLat, maxLng, maxLat };
+          return;
+        }
         let minLng = Infinity;
         let minLat = Infinity;
         let maxLng = -Infinity;
@@ -379,21 +465,21 @@ export default {
     },
 
     // 搜索到流域后：切换边界级别并定位到该流域（地图中央）
-    focusOnSearchResult() {
+    async focusOnSearchResult() {
       const target = this.currentWatershed;
       if (!target || !target.lng || !target.lat) return;
-      if (target.level && this.searchForm.level !== target.level) {
-        // 级别不同：记录待定位，切换级别会触发 loadBoundaries，加载完成后自动定位
-        this.pendingFocus = { lng: target.lng, lat: target.lat, level: target.level };
-        this.searchForm.level = target.level;
-      } else if (this.boundaryLevel !== target.level) {
-        // 级别相同但该级别边界还没加载过：直接加载后再定位
-        this.pendingFocus = { lng: target.lng, lat: target.lat, level: target.level };
-        this.loadBoundaries(target.level);
-      } else {
-        // 边界已就绪：直接定位
-        this._focusWatershed(target);
-      }
+      this.pendingFocus = {
+        id: target.id,
+        lng: target.lng,
+        lat: target.lat,
+        level: target.level,
+      };
+      this.searchForm.level = target.level;
+      this.highlightIds = [String(target.id)];
+      await this.loadBoundaries(target.level, {
+        ids: [String(target.id)],
+        fitViewport: true,
+      });
     },
 
     // 执行待定的流域定位

@@ -14,6 +14,9 @@ class Config:
     # 每次下载使用独立任务目录，避免并发请求互相覆盖
     JOB_ROOT = Path(os.getenv('CONCN_JOB_ROOT', BASE_DIR / 'jobs'))
     MAX_BATCH_DOWNLOADS = int(os.getenv('CONCN_MAX_BATCH_DOWNLOADS', '10'))
+    MAX_BOUNDARY_IDS = int(os.getenv('CONCN_MAX_BOUNDARY_IDS', '200'))
+    MAX_BOUNDARY_FEATURES = int(os.getenv('CONCN_MAX_BOUNDARY_FEATURES', '5000'))
+    FULL_BOUNDARY_MAX_LEVEL = int(os.getenv('CONCN_FULL_BOUNDARY_MAX_LEVEL', '8'))
     ALLOWED_ORIGINS = [
         origin.strip()
         for origin in os.getenv('CONCN_ALLOWED_ORIGINS', '*').split(',')
@@ -26,7 +29,7 @@ class Config:
     # 边界缓存目录
     BOUNDARY_CACHE_DIR = BASE_DIR / 'boundary_cache'
 
-    # SHP 文件目录（默认 Linux 服务器路径，本地开发设环境变量 SHP_DIR 覆盖）
+    # SHP 文件目录（默认集群路径，本地开发可用 CONCN_SHP_DIR 覆盖）
     SHP_DIR = os.getenv(
         'CONCN_SHP_DIR',
         '/data/share/parflow-group/CONCN_Subbasins_Map/PFBAS/shp',
