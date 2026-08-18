@@ -1,682 +1,87 @@
 <template>
-  <div id="data-view">
-    <!-- 搜索区域 -->
-    <el-card class="search-card" shadow="never">
-      <el-form :inline="true" :model="searchForm" class="search-form">
-        <el-form-item label="流域编号/名称">
-          <el-input
-            v-model="searchForm.keyword"
-            placeholder="请输入编号或名称"
-            clearable
-            style="width: 220px;"
-          />
-        </el-form-item>
-        <el-form-item label="所属地区">
-          <el-select
-            v-model="searchForm.region"
-            placeholder="请选择地区"
-            clearable
-            style="width: 160px;"
-          >
-            <el-option label="长江流域" value="长江流域" />
-            <el-option label="黄河流域" value="黄河流域" />
-            <el-option label="淮河流域" value="淮河流域" />
-            <el-option label="海河流域" value="海河流域" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="流域级别">
-          <el-select
-            v-model="searchForm.level"
-            placeholder="请选择级别"
-            clearable
-            style="width: 140px;"
-            @change="handleLevelChange"
-          >
-            <el-option
-              v-for="num in levelOptions"
-              :key="num"
-              :label="num + '级'"
-              :value="num"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch" :loading="loading">搜索</el-button>
-          <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="handleDownload" :loading="downloading">下载数据</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+  <div class="explorer">
+    <aside class="explorer-panel">
+      <div class="panel-heading">
+        <span>CONCN BASIN EXPLORER</span>
+        <h1>探索中国<br>流域数据</h1>
+        <p>选择流域层级和数据类型，在地图中定位你的研究区域。</p>
+      </div>
 
-    <!-- 主体区域：左侧地图 + 右侧流域信息（可折叠，折叠后地图占满，信息栏缩成悬浮按钮） -->
-    <el-row :gutter="0" class="main-row">
-      <el-col
-        :xs="24"
-        :sm="infoPanelVisible ? 16 : 24"
-        :md="infoPanelVisible ? 16 : 24"
-        :lg="infoPanelVisible ? 16 : 24"
-        class="map-col"
-      >
-        <el-card class="map-card" shadow="never">
-          <template #header>
-            <span>流域分布地图</span>
-          </template>
-          <MapComponent
-            ref="mapComponent"
-            :center="mapCenter"
-            :boundary-data="boundaryData"
-            :highlight-ids="highlightIds"
-            :watershed-info="currentWatershed"
-            :info-download-loading="downloading"
-            :auto-fit-boundaries="boundaryAutoFit"
-            @polygon-click="onPolygonClick"
-            @info-download="downloadCurrentWatershed"
-            @viewport-change="onViewportChange"
-          />
-        </el-card>
-      </el-col>
-      <el-col v-if="infoPanelVisible" :xs="24" :sm="8" :md="8" :lg="8" class="info-col">
-        <el-card class="info-card" shadow="never">
-          <template #header>
-            <div class="info-card-header">
-              <span>流域信息</span>
-              <el-button
-                class="info-collapse-btn"
-                type="primary"
-                size="mini"
-                title="收起信息栏"
-                @click="infoPanelVisible = false"
-              >收起</el-button>
-            </div>
-          </template>
-          <div v-if="currentWatershed" class="info-content">
-            <p><strong>编号：</strong>{{ currentWatershed.id }}</p>
-            <p><strong>级别：</strong>{{ currentWatershed.level }}级</p>
-            <p><strong>所属地区：</strong>{{ currentWatershed.region }}</p>
-            <p><strong>经纬度范围：</strong>{{ bboxText || '—' }}</p>
-            <p><strong>面积：</strong>{{ areaText || '—' }}</p>
-          </div>
-          <div v-else class="info-placeholder">
-            <span style="color: #bbb;">请搜索或点击地图上的流域查看详情</span>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+      <div class="search-control">
+        <label for="basin-search">搜索流域</label>
+        <div><input id="basin-search" v-model="keyword" placeholder="输入名称或流域编号" @keyup.enter="search"><button aria-label="搜索" @click="search">⌕</button></div>
+      </div>
 
-    <!-- 信息栏折叠后的恢复按钮（悬浮在地图右下角，展开信息栏） -->
-    <button
-      v-if="!infoPanelVisible"
-      class="info-restore-btn"
-      @click="infoPanelVisible = true"
-    >流域信息 ▸</button>
+      <fieldset class="level-control">
+        <legend><span>流域层级</span><strong>Level {{ level }}</strong></legend>
+        <div class="level-options"><button v-for="item in levels" :key="item" :class="{active:item===level}" @click="level=item">{{ item }}</button></div>
+        <p>层级越高，流域单元越精细</p>
+      </fieldset>
+
+      <label class="select-control">所属水系
+        <span><select v-model="river"><option value="">全部水系</option><option>长江流域</option><option>黄河流域</option><option>珠江流域</option><option>海河流域</option></select><i>⌄</i></span>
+      </label>
+
+      <div class="product-control">
+        <span>需要的数据</span>
+        <div class="product-chips"><button v-for="product in products" :key="product.name" :class="{active:product.active}" @click="product.active=!product.active"><i>✓</i>{{ product.name }}</button></div>
+      </div>
+
+      <button class="search-action" @click="search"><span>在地图中查找</span><i>→</i></button>
+
+      <div class="preview-note"><span>预览模式</span><p>当前页面不连接本地流域数据。你仍然可以体验完整的界面和交互。</p></div>
+    </aside>
+
+    <section class="map-area">
+      <header class="map-header">
+        <div><span class="online-dot"></span><strong>全国流域视图</strong><small>界面预览</small></div>
+        <div class="map-view-options"><button class="active">地形</button><button>边界</button><button>河网</button></div>
+      </header>
+
+      <div class="map-viewport">
+        <div class="map-grid"></div>
+        <div class="map-caption"><span>CONCN / CHINA</span><strong>国家尺度水文数据底图</strong></div>
+        <div class="map-image-wrap">
+          <img src="/logo.png" alt="中国水文地形示意图">
+          <button v-for="basin in basins" :key="basin.id" class="basin-marker" :class="[{selected:selection?.id===basin.id},basin.className]" @click="selectBasin(basin)"><i></i><span>{{ basin.name }}</span></button>
+        </div>
+        <div class="zoom-tools"><button aria-label="放大">＋</button><button aria-label="缩小">−</button><button aria-label="定位">⌖</button></div>
+        <div class="map-coordinate"><span>80°E</span><i></i><span>120°E</span></div>
+
+        <transition name="result">
+          <article v-if="selection" class="basin-result">
+            <button class="result-close" aria-label="关闭" @click="selection=null">×</button>
+            <span>已选择流域</span><h2>{{ selection.name }}</h2>
+            <dl><div><dt>编号</dt><dd>{{ selection.id }}</dd></div><div><dt>层级</dt><dd>Level {{ level }}</dd></div><div><dt>数据类型</dt><dd>{{ activeProductCount }} 项</dd></div></dl>
+            <button class="detail-action">查看数据详情 <i>→</i></button>
+          </article>
+        </transition>
+        <div v-if="feedback" class="search-feedback"><i>✓</i><span><strong>已定位演示流域</strong><small>当前未连接真实数据</small></span></div>
+      </div>
+
+      <footer class="map-footer">
+        <div class="legend"><span><i class="terrain-key"></i>水文地形</span><span><i class="marker-key"></i>可选流域</span></div>
+        <div class="scale"><span></span><small>500 km</small></div>
+        <div>数据参考 · EPSG:4326</div>
+      </footer>
+    </section>
   </div>
 </template>
 
-<script>
-import axios from 'axios';
-import { markRaw } from 'vue';
-import MapComponent from '@/components/MapComponent.vue';
-import { formatBBox, formatArea } from '@/utils/format';
-
-const API_BASE = ''; // 空字符串，使用相对路径
-
-export default {
-  name: 'DataView',
-  components: {
-    MapComponent,
-  },
-  data() {
-    return {
-      searchForm: {
-        keyword: '',
-        region: '',
-        level: null,
-      },
-      levelOptions: (() => {
-        const arr = [];
-        for (let i = 2; i <= 14; i += 2) arr.push(i);
-        return arr;
-      })(),
-      tableData: [],
-      currentWatershed: null,
-      loading: false,
-      downloading: false,
-      maxBatchDownloads: 10,
-      fullBoundaryMaxLevel: 8,
-      mapCenter: [116.40769, 39.89945], // 默认中心（首次加载使用，搜索后不再更新）
-      // 流域边界
-      boundaryData: null,      // 当前显示的全量或局部边界 GeoJSON
-      boundaryLevel: null,     // 当前加载的边界级别
-      boundaryAutoFit: true,   // 是否在边界加载后自动缩放至数据范围
-      boundaryQueryMode: 'full', // full / ids / viewport
-      boundaryRequestSerial: 0,  // 丢弃较旧异步请求的响应
-      boundaryAbortController: null,
-      viewportLoadTimer: null,
-      highlightIds: [],        // 搜索命中的流域 id（用于高亮）
-      pendingFocus: null,      // 搜索后待定位的流域 { lng, lat, level }（等边界加载完成后执行）
-      infoPanelVisible: true,  // 右侧流域信息栏是否展开（折叠后地图占满，显示恢复按钮）
-      bboxMap: {},             // 流域 id → 包围盒 {minLng,minLat,maxLng,maxLat}（从已加载边界 GeoJSON 建立）
-    };
-  },
-  mounted() {
-    this.loadRuntimeConfig();
-    // 默认显示第 2 级全国流域边界
-    // 不做自动搜索: 不产生高亮 → 所有级别默认都是蓝色，点击"搜索"后才橙色
-    if (!this.searchForm.level) {
-      this.searchForm.level = 2;
-    }
-    this.loadBoundaries(this.searchForm.level);
-  },
-  beforeUnmount() {
-    if (this.viewportLoadTimer) clearTimeout(this.viewportLoadTimer);
-    this.boundaryAbortController?.abort();
-  },
-  computed: {
-    // 当前流域的经纬度范围文本（如 "N26.12 S25.13 W114.22 E115.34"）
-    bboxText() {
-      return this.currentWatershed ? formatBBox(this.currentWatershed.bbox) : '';
-    },
-    // 当前流域面积（保留两位小数，如 "1234.56"）
-    areaText() {
-      return this.currentWatershed ? formatArea(this.currentWatershed.area) : '';
-    },
-  },
-  watch: {
-    // 信息栏折叠/展开改变列宽后，地图容器尺寸变化 → 等布局完成再通知地图重算，避免瓦片错位/留白
-    infoPanelVisible() {
-      this.$nextTick(() => {
-        setTimeout(() => {
-          if (this.$refs.mapComponent) {
-            this.$refs.mapComponent.handleResize();
-          }
-        }, 300);
-      });
-    },
-  },
-  methods: {
-    handleLevelChange(level) {
-      this.pendingFocus = null;
-      this.highlightIds = [];
-      this.loadBoundaries(level);
-    },
-
-    async loadRuntimeConfig() {
-      try {
-        const response = await axios.get(`${API_BASE}/api/config`);
-        const limit = Number(response.data.maxBatchDownloads);
-        if (Number.isInteger(limit) && limit > 0) this.maxBatchDownloads = limit;
-        const fullBoundaryLevel = Number(response.data.fullBoundaryMaxLevel);
-        if (Number.isInteger(fullBoundaryLevel) && fullBoundaryLevel >= 2) {
-          this.fullBoundaryMaxLevel = fullBoundaryLevel;
-        }
-      } catch (error) {
-        console.warn('未能加载后端配置，使用默认批量下载上限:', error);
-      }
-    },
-
-    async handleSearch() {
-      this.loading = true;
-      try {
-        const keyword = (this.searchForm.keyword || '').trim();
-        const region = this.searchForm.region || '';
-        // 没有任何搜索条件（空搜索会命中全部 7 万流域 → 全量高亮 + 跳级别）:
-        // 拦截并保持当前视图, 不搜索、不高亮、不跳转
-        if (!keyword && !region) {
-          this.tableData = [];
-          this.currentWatershed = null;
-          this.highlightIds = [];
-          this.$message.info('请输入流域编号/名称, 或选择所属地区后再搜索');
-          return;
-        }
-        // 注意: 不传 level 过滤 —— 搜索框级别仅用于控制地图显示的边界级别,
-        // 搜索结果命中后会自动切换到该流域的级别（见 focusOnSearchResult）。
-        // 若带 level 过滤, 搜索与当前级别不同的流域会被后端直接过滤掉, 搜不到。
-        const params = {
-          keyword,
-          region,
-        };
-        const response = await axios.get(`${API_BASE}/api/watersheds`, { params });
-        this.tableData = response.data;
-        this.currentWatershed = this.tableData.length > 0 ? this._attachBBox(this.tableData[0]) : null;
-        // 更新搜索命中高亮
-        this.updateHighlightIds();
-        // 如果已加载边界但搜索结果为空，保留当前边界显示
-        if (this.tableData.length === 0 && this.boundaryData) {
-          this.highlightIds = [];
-        }
-        // 搜索到流域：切换到该流域的级别，并把流域移到地图中央
-        await this.focusOnSearchResult();
-      } catch (error) {
-        console.error('搜索失败:', error);
-        alert('搜索失败，请检查后端服务是否运行');
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    resetSearch() {
-      this.searchForm.keyword = '';
-      this.searchForm.region = '';
-      this.searchForm.level = null;
-      this.tableData = [];
-      this.currentWatershed = null;
-      this.loadBoundaries(null);
-    },
-
-    async handleDownload() {
-      if (this.tableData.length === 0) {
-        alert('没有可下载的数据，请先搜索。');
-        return;
-      }
-      if (this.tableData.length > this.maxBatchDownloads) {
-        this.$message.warning(
-          `搜索结果共 ${this.tableData.length} 个，单次最多下载 ${this.maxBatchDownloads} 个，请缩小搜索范围。`
-        );
-        return;
-      }
-      await this.downloadByIds(this.tableData.map((row) => row.id));
-    },
-
-    // 地图信息卡"下载数据"：直接下载当前点击的流域
-    async downloadCurrentWatershed() {
-      if (!this.currentWatershed || !this.currentWatershed.id) {
-        alert('请先点击地图上的流域。');
-        return;
-      }
-      await this.downloadByIds([this.currentWatershed.id]);
-    },
-
-    // 按 id 列表下载数据（打包 zip 并触发浏览器保存）
-    async downloadByIds(ids) {
-      console.log('[前端] 发送的 ids:', ids);
-      this.downloading = true;
-      try {
-        const response = await axios.post(
-          `${API_BASE}/api/download`,
-          { ids },
-          {
-            responseType: 'blob',
-            timeout: 600000,
-          }
-        );
-        const contentDisposition = response.headers['content-disposition'];
-        let filename = 'watershed_data.zip';
-        if (contentDisposition) {
-          const match = contentDisposition.match(/filename="?([^"]+)"?/);
-          if (match) filename = match[1];
-        }
-        const blob = new Blob([response.data]);
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-      } catch (error) {
-        console.error('下载失败:', error);
-        let message = '下载失败，请检查后端服务。';
-        if (error.response?.data instanceof Blob) {
-          try {
-            const payload = JSON.parse(await error.response.data.text());
-            if (payload.error) message = payload.error;
-          } catch (_) {
-            // 非 JSON 错误响应，保留通用提示
-          }
-        }
-        this.$message.error(message);
-      } finally {
-        this.downloading = false;
-      }
-    },
-
-    // ---- 流域边界加载 ----
-    async loadBoundaries(level, options = {}) {
-      if (!level) {
-        this.boundaryRequestSerial += 1;
-        this.boundaryAbortController?.abort();
-        this.boundaryData = null;
-        this.boundaryLevel = null;
-        this.highlightIds = [];
-        return;
-      }
-
-      const requestSerial = ++this.boundaryRequestSerial;
-      this.boundaryAbortController?.abort();
-      this.boundaryAbortController = null;
-      this.boundaryLevel = level;
-      const ids = options.ids || null;
-      let bbox = options.bbox || null;
-      const highLevel = level > this.fullBoundaryMaxLevel;
-      const minimumZoom = { 10: 7, 12: 8, 14: 9 }[level];
-
-      if (!ids && highLevel && !bbox) {
-        const viewport = this.$refs.mapComponent?.getViewportState();
-        this.boundaryQueryMode = 'viewport';
-        this.boundaryAutoFit = false;
-        if (!viewport) return;
-        if (viewport.zoom < minimumZoom) {
-          this.boundaryData = null;
-          this.$message.info(`PFBAS${level} 将按当前视野加载，正在放大地图…`);
-          this.$refs.mapComponent?.ensureZoom(minimumZoom);
-          return;
-        }
-        bbox = viewport.bbox;
-      }
-
-      const params = { level };
-      if (ids) params.ids = ids.join(',');
-      if (bbox) params.bbox = bbox.join(',');
-
-      this.boundaryQueryMode = ids ? 'ids' : (bbox ? 'viewport' : 'full');
-      this.boundaryAutoFit = options.fitViewport ?? (Boolean(ids) || !highLevel);
-      const controller = new AbortController();
-      this.boundaryAbortController = controller;
-      let loaded = false;
-      try {
-        const response = await axios.get(`${API_BASE}/api/boundaries`, {
-          params,
-          timeout: 120000,
-          signal: controller.signal,
-        });
-        if (requestSerial !== this.boundaryRequestSerial) return;
-        this.boundaryData = markRaw(response.data);
-        // 建立 "流域 id → 包围盒" 索引，供信息栏显示经纬度范围
-        this.bboxMap = this._buildBBoxMap(response.data);
-        if (this.currentWatershed) {
-          this.currentWatershed = this._attachBBox(this.currentWatershed);
-        }
-        loaded = true;
-      } catch (error) {
-        if (error.code === 'ERR_CANCELED') return;
-        if (requestSerial !== this.boundaryRequestSerial) return;
-        console.error('加载边界失败:', error);
-        const message = error.response?.data?.error || '加载流域边界失败，请检查后端服务';
-        if (error.response?.status === 422) this.$message.warning(message);
-        else this.$message.error(message);
-        this.boundaryData = null;
-      } finally {
-        if (this.boundaryAbortController === controller) {
-          this.boundaryAbortController = null;
-        }
-      }
-      if (ids && loaded) this._flushPendingFocus();
-    },
-
-    onViewportChange(viewport) {
-      if (this.boundaryQueryMode !== 'viewport' || !this.searchForm.level) return;
-      const minimumZoom = { 10: 7, 12: 8, 14: 9 }[this.searchForm.level];
-      if (!minimumZoom) return;
-      if (viewport.zoom < minimumZoom) {
-        this.boundaryRequestSerial += 1;
-        this.boundaryData = null;
-        return;
-      }
-      if (this.viewportLoadTimer) clearTimeout(this.viewportLoadTimer);
-      this.viewportLoadTimer = setTimeout(() => {
-        this.loadBoundaries(this.searchForm.level, {
-          bbox: viewport.bbox,
-          fitViewport: false,
-        });
-      }, 250);
-    },
-
-    // 从边界 GeoJSON 建立 "流域 id → 包围盒" 索引（坐标顺序 [lng, lat]）
-    _buildBBoxMap(geojson) {
-      const map = {};
-      if (!geojson || !geojson.features) return map;
-      geojson.features.forEach((feature) => {
-        const props = feature.properties || {};
-        const fid = String(props.PFBAS_ID || props.id || '');
-        if (!fid || !feature.geometry) return;
-        if (Array.isArray(feature.bbox) && feature.bbox.length === 4) {
-          const [minLng, minLat, maxLng, maxLat] = feature.bbox.map(Number);
-          map[fid] = { minLng, minLat, maxLng, maxLat };
-          return;
-        }
-        let minLng = Infinity;
-        let minLat = Infinity;
-        let maxLng = -Infinity;
-        let maxLat = -Infinity;
-        const walk = (coords) => {
-          if (typeof coords[0] === 'number') {
-            if (coords[0] < minLng) minLng = coords[0];
-            if (coords[1] < minLat) minLat = coords[1];
-            if (coords[0] > maxLng) maxLng = coords[0];
-            if (coords[1] > maxLat) maxLat = coords[1];
-          } else {
-            coords.forEach(walk);
-          }
-        };
-        walk(feature.geometry.coordinates);
-        if (minLng !== Infinity) {
-          map[fid] = { minLng, minLat, maxLng, maxLat };
-        }
-      });
-      return map;
-    },
-
-    // 给流域数据附加包围盒（范围），来自当前已加载边界的 bboxMap；
-    // 搜索/点击两个入口统一走这里，保证信息栏和浮动卡都能显示范围
-    _attachBBox(w) {
-      if (!w || !w.id) return w;
-      return { ...w, bbox: this.bboxMap[String(w.id)] || null };
-    },
-
-    // 搜索到流域后：切换边界级别并定位到该流域（地图中央）
-    async focusOnSearchResult() {
-      const target = this.currentWatershed;
-      if (!target || !target.lng || !target.lat) return;
-      this.pendingFocus = {
-        id: target.id,
-        lng: target.lng,
-        lat: target.lat,
-        level: target.level,
-      };
-      this.searchForm.level = target.level;
-      this.highlightIds = [String(target.id)];
-      await this.loadBoundaries(target.level, {
-        ids: [String(target.id)],
-        fitViewport: true,
-      });
-    },
-
-    // 执行待定的流域定位
-    _flushPendingFocus() {
-      if (!this.pendingFocus) return;
-      const { lng, lat, level } = this.pendingFocus;
-      this.pendingFocus = null;
-      this.$nextTick(() => this._focusWatershed({ lng, lat, level }));
-    },
-
-    _focusWatershed(w) {
-      if (this.$refs.mapComponent && w.lng !== undefined && w.lat !== undefined) {
-        this.$refs.mapComponent.focusWatershed(w.lng, w.lat, w.level);
-      }
-    },
-
-    // 高亮搜索命中的流域
-    updateHighlightIds() {
-      this.highlightIds = this.tableData.map((row) => row.id);
-    },
-
-    // 地图上点击流域多边形 → 获取该流域详情并显示在右侧信息栏
-    async onPolygonClick(properties) {
-      const id = properties.PFBAS_ID || properties.id;
-      if (!id) {
-        console.warn('点击的流域缺少 PFBAS_ID');
-        return;
-      }
-      // 点击高亮切换: 高亮对象从"搜索命中"切换为"被点击流域"
-      // （MapComponent 已就地切换样式并跳过本次重渲染，这里只同步状态，保证后续搜索/重渲染正确）
-      this.highlightIds = [String(id)];
-      // 点击流域时自动展开信息栏（若之前被收起）
-      this.infoPanelVisible = true;
-      try {
-        const response = await axios.get(`${API_BASE}/api/watersheds/${id}`);
-        this.currentWatershed = this._attachBBox(response.data);
-      } catch (error) {
-        console.error('获取流域详情失败:', error);
-        if (error.response && error.response.status === 404) {
-          this.$message.warning(`未找到流域 ${id} 的信息`);
-        } else {
-          this.$message.error('获取流域信息失败，请检查网络连接');
-        }
-      }
-    },
-  },
-};
+<script setup>
+import { computed, ref } from 'vue'
+const levels=[2,4,6,8,10,12,14]
+const level=ref(4),keyword=ref(''),river=ref(''),selection=ref(null),feedback=ref(false)
+const products=ref([{name:'地形高程',active:true},{name:'土壤地质',active:true},{name:'土地覆盖',active:false},{name:'气象驱动',active:false}])
+const basins=[{id:'CJ-0201',name:'长江上游',className:'marker-yangtze'},{id:'HH-0108',name:'黄河中游',className:'marker-yellow'},{id:'ZJ-0402',name:'珠江流域',className:'marker-pearl'}]
+const activeProductCount=computed(()=>products.value.filter(item=>item.active).length)
+function selectBasin(basin){selection.value=basin}
+function search(){const name=keyword.value||river.value||'长江上游';selection.value={id:'DEMO-0201',name};feedback.value=true;window.setTimeout(()=>feedback.value=false,2200)}
 </script>
 
 <style scoped>
-#data-view {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  font-family: 'Helvetica Neue', Arial, sans-serif;
-  background-color: #f5f7fa;
-}
-.search-card {
-  margin-bottom: 16px;
-  flex-shrink: 0;
-  border-radius: 0;
-}
-.search-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px;
-}
-.main-row {
-  flex: 1;
-  margin: 0 !important;
-  width: 100%;
-  min-height: 0;
-}
-.map-col,
-.info-col {
-  display: flex;
-  flex-direction: column;
-}
-.map-card {
-  height: 100%;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-}
-/* 统一两个卡片 header 的高度与内边距并垂直居中，保证标题线（header 下边框）水平对齐 */
-.map-card :deep(.el-card__header),
-.info-card :deep(.el-card__header) {
-  display: flex;
-  align-items: center;
-  height: 52px;
-  padding: 0 20px;
-  box-sizing: border-box;
-}
-.map-card :deep(.el-card__body) {
-  flex: 1;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.map-card :deep(.map-container) {
-  flex: 1;
-  width: 100%;
-  min-height: 300px;
-  background-color: #f5f7fa;
-}
-.info-card {
-  height: 100%;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-}
-.info-card :deep(.el-card__body) {
-  flex: 1;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.info-content {
-  flex: 1;
-  padding: 15px;
-  overflow-y: auto;
-}
-.info-content p {
-  margin: 8px 0;
-  font-size: 14px;
-  line-height: 1.8;
-  border-bottom: 1px solid #f0f0f0;
-  padding-bottom: 6px;
-}
-.info-content strong {
-  display: inline-block;
-  width: 90px; /* 容纳最长的 label "经纬度范围:"（6 字符 ≈ 84px）不折行 */
-  white-space: nowrap;
-  color: #606266;
-}
-.info-placeholder {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #bbb;
-  font-size: 16px;
-}
-/* 信息栏 header: 收起按钮推至整个屏幕最右侧 */
-.info-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex: 1; /* 占满 header 整行, 否则 space-between 只在内容宽度内生效, 右侧留大片空白 */
-}
-/* 覆盖统一 header 的右内边距: 与登录页注册按钮右缘对齐
-   （登录框 .login-box 右内边距 35px, 注册按钮 width:100% 距屏幕右缘即 35px） */
-.info-card :deep(.el-card__header) {
-  padding-right: 35px;
-}
-.info-collapse-btn {
-  /* 实心蓝底白字（type="primary" 默认样式, 与登录按钮一致）;
-     字号比 mini 默认放大半号（12px → 14px）;
-     padding 相应收窄, 保证按钮整体大小不变（与缩小后尺寸接近） */
-  margin: 0;
-  padding: 2px 8px;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-/* 信息栏折叠后的悬浮恢复按钮（覆盖在地图右下角） */
-.info-restore-btn {
-  position: fixed;
-  right: 24px;
-  bottom: 32px;
-  z-index: 2000;
-  padding: 8px 14px;
-  background: #fff;
-  color: #409eff;
-  border: 1px solid #c6e2ff;
-  border-radius: 18px;
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-.info-restore-btn:hover {
-  background: #ecf5ff;
-}
-@media (max-width: 768px) {
-  .map-card :deep(.map-container) {
-    min-height: 200px;
-  }
-  .info-placeholder {
-    min-height: 150px;
-  }
-  .search-form {
-    padding: 0 5px;
-  }
-  .search-form .el-form-item {
-    margin-bottom: 5px;
-  }
-}
+.explorer{height:calc(100vh - 78px);min-height:650px;display:grid;grid-template-columns:370px minmax(0,1fr);overflow:hidden;background:white}.explorer-panel{padding:34px 38px 25px;overflow:auto;border-right:1px solid var(--line);background:white}.panel-heading>span{color:var(--blue);font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.12em}.panel-heading h1{margin:12px 0 11px;color:var(--navy);font-family:var(--display);font-size:38px;font-weight:600;line-height:1.12;letter-spacing:-.04em}.panel-heading p{margin:0;color:var(--muted);font-size:12px;line-height:1.75}.search-control{margin-top:28px}.search-control label,.select-control,.product-control>span{display:block;color:#4e697c;font-size:11px;font-weight:600}.search-control>div{height:44px;margin-top:9px;display:flex;border:1px solid var(--line);border-radius:10px;background:var(--snow);transition:.2s}.search-control>div:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px rgba(22,139,224,.09)}.search-control input{min-width:0;flex:1;padding:0 13px;border:0;outline:0;color:var(--navy);background:transparent;font-size:12px}.search-control button{width:44px;border:0;color:var(--blue);background:transparent;cursor:pointer;font-size:18px}.level-control{margin:24px 0 0;padding:20px 0 0;border:0;border-top:1px solid var(--line)}.level-control legend{width:100%;display:flex;justify-content:space-between;color:#4e697c;font-size:11px;font-weight:600}.level-control legend strong{color:var(--blue);font-family:var(--mono);font-size:9px}.level-options{margin-top:12px;display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.level-options button{height:32px;padding:0;border:1px solid var(--line);border-radius:7px;color:#7590a2;background:white;font-family:var(--mono);font-size:9px;cursor:pointer}.level-options button:hover{border-color:#9bcaea;color:var(--blue)}.level-options button.active{border-color:var(--blue);color:white;background:var(--blue);box-shadow:0 5px 12px rgba(22,139,224,.2)}.level-control p{margin:8px 0 0;color:#9aabb7;font-size:9px}.select-control{margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}.select-control>span{position:relative;display:block;margin-top:9px}.select-control select{width:100%;height:42px;padding:0 36px 0 12px;appearance:none;border:1px solid var(--line);border-radius:9px;outline:0;color:#547084;background:var(--snow);font-size:11px}.select-control i{position:absolute;right:13px;top:10px;color:#8399a9;font-style:normal}.product-control{margin-top:20px;padding-top:19px;border-top:1px solid var(--line)}.product-chips{margin-top:10px;display:flex;flex-wrap:wrap;gap:7px}.product-chips button{height:30px;padding:0 10px;border:1px solid var(--line);border-radius:16px;color:#708899;background:white;font-size:10px;cursor:pointer}.product-chips button i{display:none;margin-right:4px;font-style:normal}.product-chips button.active{border-color:#9fdbe6;color:#117d94;background:#ecfbfd}.product-chips button.active i{display:inline}.search-action{width:100%;height:46px;margin-top:23px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;border:0;border-radius:10px;color:white;background:linear-gradient(90deg,var(--blue),#20a9d2);box-shadow:0 10px 22px rgba(20,139,204,.2);font-size:12px;font-weight:600;cursor:pointer;transition:.2s}.search-action:hover{transform:translateY(-1px);box-shadow:0 13px 25px rgba(20,139,204,.28)}.search-action i{font-style:normal;font-size:16px}.preview-note{margin-top:17px;padding:12px 13px;border-radius:9px;background:var(--soft)}.preview-note span{color:var(--blue);font-size:9px;font-weight:700}.preview-note p{margin:4px 0 0;color:#8196a5;font-size:9px;line-height:1.55}
+.map-area{min-width:0;display:grid;grid-template-rows:55px minmax(0,1fr) 42px;background:var(--sky)}.map-header{padding:0 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(88,151,180,.16);background:rgba(255,255,255,.58)}.map-header>div:first-child{display:flex;align-items:center;gap:8px}.map-header strong{font-size:11px}.map-header small{padding-left:8px;border-left:1px solid #c5dce6;color:#7e98a7;font-size:9px}.online-dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px rgba(37,167,121,.1)}.map-view-options{padding:3px;display:flex;border:1px solid rgba(112,170,196,.2);border-radius:18px;background:rgba(255,255,255,.65)}.map-view-options button{height:27px;padding:0 13px;border:0;border-radius:14px;color:#7290a1;background:transparent;font-size:9px;cursor:pointer}.map-view-options button.active{color:var(--navy);background:white;box-shadow:0 3px 9px rgba(20,73,104,.09)}.map-viewport{position:relative;min-height:0;overflow:hidden;background:radial-gradient(circle at 52% 48%,#fff 0,#f4fbfd 45%,#e5f4f9 100%)}.map-grid{position:absolute;inset:0;opacity:.42;background-image:linear-gradient(rgba(45,126,157,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(45,126,157,.08) 1px,transparent 1px);background-size:82px 82px;mask-image:radial-gradient(circle,#000,transparent 82%)}.map-caption{position:absolute;z-index:3;left:24px;top:22px}.map-caption span,.map-caption strong{display:block}.map-caption span{color:#68a2b8;font-family:var(--mono);font-size:7px;letter-spacing:.12em}.map-caption strong{margin-top:4px;color:#547d8f;font-size:11px}.map-image-wrap{position:absolute;left:8%;right:7%;top:8%;bottom:6%;display:flex;align-items:center;justify-content:center}.map-image-wrap>img{max-width:100%;max-height:100%;object-fit:contain;filter:saturate(.87) drop-shadow(0 18px 28px rgba(21,95,130,.13));user-select:none}.basin-marker{position:absolute;z-index:5;padding:0;border:0;background:transparent;cursor:pointer}.basin-marker i{width:14px;height:14px;display:block;border:3px solid white;border-radius:50%;background:var(--blue);box-shadow:0 3px 12px rgba(7,67,107,.32);transition:.2s}.basin-marker span{position:absolute;left:17px;top:-3px;padding:4px 7px;border-radius:5px;color:#345e76;background:rgba(255,255,255,.88);box-shadow:0 4px 12px rgba(28,91,124,.08);font-size:8px;white-space:nowrap;opacity:0;transform:translateX(-4px);transition:.2s}.basin-marker:hover i,.basin-marker.selected i{transform:scale(1.2);background:var(--cyan)}.basin-marker:hover span,.basin-marker.selected span{opacity:1;transform:none}.marker-yangtze{left:55%;top:63%}.marker-yellow{left:61%;top:46%}.marker-pearl{left:67%;top:79%}.zoom-tools{position:absolute;z-index:6;right:20px;top:23px;display:grid;overflow:hidden;border:1px solid rgba(68,133,160,.24);border-radius:9px;background:rgba(255,255,255,.88);box-shadow:0 7px 20px rgba(20,75,106,.08)}.zoom-tools button{width:34px;height:34px;border:0;border-bottom:1px solid var(--line);color:#527a8f;background:transparent;cursor:pointer}.zoom-tools button:last-child{border-bottom:0}.map-coordinate{position:absolute;left:26px;right:25px;bottom:15px;display:flex;align-items:center;gap:8px;color:#80a2b1;font-family:var(--mono);font-size:7px}.map-coordinate i{height:1px;flex:1;background:linear-gradient(90deg,transparent,#99c4d3,transparent)}.basin-result{position:absolute;z-index:8;right:22px;bottom:22px;width:260px;padding:19px;border:1px solid rgba(145,194,214,.45);border-radius:14px;background:rgba(255,255,255,.94);box-shadow:0 18px 45px rgba(20,75,105,.16);backdrop-filter:blur(12px)}.result-close{position:absolute;right:12px;top:10px;border:0;color:#89a0ae;background:transparent;cursor:pointer;font-size:16px}.basin-result>span{color:var(--blue);font-size:8px;font-weight:700}.basin-result h2{margin:6px 0 14px;color:var(--navy);font-family:var(--display);font-size:21px}.basin-result dl{margin:0}.basin-result dl>div{padding:7px 0;display:flex;justify-content:space-between;border-top:1px solid var(--line);font-size:9px}.basin-result dt{color:#8499a7}.basin-result dd{margin:0;color:#3c6074;font-family:var(--mono)}.detail-action{width:100%;height:36px;margin-top:12px;padding:0 11px;display:flex;align-items:center;justify-content:space-between;border:0;border-radius:8px;color:white;background:var(--navy);font-size:9px;cursor:pointer}.detail-action i{font-style:normal}.search-feedback{position:absolute;z-index:9;left:50%;top:22px;transform:translateX(-50%);padding:10px 14px;display:flex;align-items:center;gap:9px;border-radius:10px;color:white;background:var(--navy);box-shadow:0 12px 25px rgba(4,43,72,.18)}.search-feedback>i{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;color:var(--navy);background:var(--cyan);font-size:10px;font-style:normal}.search-feedback strong,.search-feedback small{display:block;font-size:9px}.search-feedback small{margin-top:2px;color:#9cc4d3;font-size:7px}.result-enter-active,.result-leave-active{transition:.22s}.result-enter-from,.result-leave-to{opacity:0;transform:translateY(8px)}.map-footer{padding:0 20px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border-top:1px solid rgba(88,151,180,.18);color:#7692a1;background:rgba(255,255,255,.66);font-size:8px}.legend{display:flex;gap:14px}.legend span{display:flex;align-items:center;gap:5px}.legend i{display:inline-block}.terrain-key{width:13px;height:5px;background:linear-gradient(90deg,#245ebd,#77dfdb)}.marker-key{width:7px;height:7px;border-radius:50%;background:var(--blue)}.scale{display:flex;align-items:center;gap:7px}.scale span{width:70px;height:5px;border-left:1px solid #6d8d9c;border-right:1px solid #6d8d9c;border-bottom:1px solid #6d8d9c}.map-footer>div:last-child{text-align:right;font-family:var(--mono)}
+@media(max-width:980px){.explorer{grid-template-columns:330px 1fr}.explorer-panel{padding:28px 25px}.panel-heading h1{font-size:33px}.map-image-wrap{left:4%;right:4%}}
+@media(max-width:760px){.explorer{height:auto;min-height:calc(100vh - 68px);display:block;overflow:visible}.explorer-panel{padding:28px 20px;border-right:0}.panel-heading h1 br{display:none}.map-area{height:620px}.map-header{position:sticky;top:68px;z-index:9}.map-caption{left:16px}.map-image-wrap{left:0;right:0}.basin-result{left:14px;right:14px;width:auto}.map-footer{grid-template-columns:1fr auto}.map-footer>div:last-child{display:none}}
 </style>
